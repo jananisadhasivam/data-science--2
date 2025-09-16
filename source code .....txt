@@ -1,0 +1,190 @@
+import pandas as pd
+import numpy as np
+df1 = pd.read_csv("/content/movies.csv.zip")
+print('Jumlah Data :', len(df1.iloc[:,1]))
+print('Jumlah Fitur :', len(df1.iloc[1,:]))
+print(f'Terdapat {len(df1.iloc[1,:])} Kolom Fitur pada Dataset yaitu:')
+print('Fitur Data :', df1.columns.tolist()[:])
+pd.options.display.max_columns = None
+df1.head()
+df1.info()
+import re
+def clean_title(title):
+    return re.sub("[^a-zA-Z0-9 ]", "", title)
+# Pisahkan genre menggunakan pemisah '|'
+df1['genres'] = df1['genres'].str.split('|')
+
+# Bersihkan judul film
+df1['title'] = df1['title'].apply(clean_title)
+
+# Perbarui movies_data
+movies_data = df1[['movieId', 'title', 'genres']]
+
+# Mendapatkan genre unik dari semua film
+unique_genres = pd.Series([genre for genres_list in movies_data['genres'] for genre in genres_list]).unique()
+
+# Output hasil
+print(movies_data.head())
+print(f"Terdapat {movies_data['title'].nunique()} Judul Film")
+print(f"Terdapat {len(unique_genres)} Genre Film.")
+print("Genre Film:", unique_genres)
+# Periksa jumlah baris dengan '(no genres listed)'
+no_genres_count = movies_data[movies_data['genres'].apply(lambda x: '(no genres listed)' in x)].shape[0]
+print(f"Terdapat {no_genres_count} film tanpa genre.")
+
+# Hapus baris dengan '(no genres listed)'
+movies_data = movies_data[~movies_data['genres'].apply(lambda x: '(no genres listed)' in x)]
+
+# Perbarui daftar genre unik
+unique_genres = pd.Series([genre for genres_list in movies_data['genres'] for genre in genres_list]).unique()
+
+# Tampilkan hasil setelah penghapusan
+print(f"Setelah penghapusan, terdapat {movies_data['title'].nunique()} Judul Film.")
+print(f"Terdapat {len(unique_genres)} Genre Film setelah pembaruan.")
+print("Genre Film:", unique_genres)
+import pandas as pd
+import matplotlib.pyplot as plt
+# Menghitung jumlah film per genre
+genre_counts = pd.Series([genre for genres_list in movies_data['genres'] for genre in genres_list]).value_counts()
+
+plt.figure(figsize=(12, 6))
+genre_counts.plot(kind='bar', color='skyblue')
+plt.title('Jumlah Film per Genre', fontsize=16)
+plt.xlabel('Genre', fontsize=14)
+plt.ylabel('Jumlah Film', fontsize=14)
+plt.xticks(rotation=45, ha='right')
+plt.show()
+df2 = pd.read_csv("/content/movies.csv.zip")
+print('Jumlah Data :', len(df2.iloc[:,1]))
+print('Jumlah Fitur :', len(df2.iloc[1,:]))
+print(f'Terdapat {len(df2.iloc[1,:])} Kolom Fitur pada Dataset yaitu:')
+print('Fitur Data :', df2.columns.tolist()[:])
+pd.options.display.max_columns = None
+df2.head()
+# Melihat Missing Values
+
+print("Jumlah Missing Values per Kolom:")
+print(df2.isnull().sum())
+print("\nJumlah Data Duplicates:")
+print(df2.duplicated().sum())
+df2.info()
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+vectorizer_title = TfidfVectorizer(ngram_range=(1,2))
+
+tfidf_title = vectorizer_title.fit_transform(movies_data['title'])
+def search_by_title(title):
+    title = clean_title(title)
+    query_vec = vectorizer_title.transform([title])
+    similarity = cosine_similarity(query_vec, tfidf_title).flatten()
+    indices = np.argpartition(similarity, -5)[-5:]
+    results = movies_data.iloc[indices][::-1]
+    return results
+
+movie_results = search_by_title("Interstellar")
+print(movie_results)
+def search_by_title(title):
+    title = clean_title(title)
+    query_vec = vectorizer_title.transform([title])
+    similarity = cosine_similarity(query_vec, tfidf_title).flatten()
+    indices = np.argpartition(similarity, -5)[-5:]
+    results = movies_data.iloc[indices][::-1]
+    return results
+
+movie_results = search_by_title("Fast and Furious")
+print(movie_results)
+vectorizer_genres = TfidfVectorizer(ngram_range=(1,2))
+# Gabungkan genre list menjadi string
+movies_data['genres_text'] = movies_data['genres'].apply(lambda x: ' '.join(x))
+
+tfidf_genres = vectorizer_genres.fit_transform(movies_data['genres_text'])
+
+def search_similar_genres(genres):
+    query_vec = vectorizer_genres.transform([genres])
+    similarity = cosine_similarity(query_vec, tfidf_genres).flatten()
+    indices = np.argpartition(similarity, -10)[-10:]
+    results = movies_data.iloc[indices][::-1]
+    return results
+
+gen = 'Adventure Action'
+print(search_similar_genres(gen))
+from sklearn.metrics.pairwise import cosine_similarity
+
+def scores_calculator(movie_id):
+    # Find the genres of the input movie
+    movie_genres = movies_data[movies_data['movieId'] == movie_id]['genres_text'].iloc[0]
+
+    # Transform the input movie's genres using the TF-IDF vectorizer
+    query_vec = vectorizer_genres.transform([movie_genres])
+
+    # Calculate cosine similarity between the input movie's genres and all other movies' genres
+    similarity_scores = cosine_similarity(query_vec, tfidf_genres).flatten()
+
+    # Create a pandas Series with similarity scores and movieIds
+    scores = pd.Series(similarity_scores, index=movies_data['movieId'])
+
+    # Sort the scores in descending order and remove the input movie itself
+    scores = scores.sort_values(ascending=False)
+    scores = scores[scores.index != movie_id]
+
+    return scores
+from sklearn.metrics.pairwise import cosine_similarity
+
+def recommendation_results(user_input, title_index=0):
+    title_candidates = search_by_title(user_input)
+    if title_index >= len(title_candidates):
+        print(f"Error: title_index {title_index} is out of bounds. Please choose an index between 0 and {len(title_candidates) - 1}.")
+        return None
+    movie_id = title_candidates.iloc[title_index]['movieId']
+    scores = scores_calculator(movie_id)
+    # Convert the scores Series to a DataFrame and rename the score column
+    scores_df = scores.reset_index().rename(columns={'index': 'movieId', 0: 'score'})
+    # Merge with movies_data
+    results = scores_df.merge(movies_data[['movieId', 'title', 'genres']], on='movieId')
+    # Select and rename columns - fixed typo and removed inplace=True
+    results = results[['title', 'score', 'genres']].rename(columns={'title': 'title', 'genres': 'genres'})
+    return results
+user_movie_input = input("Enter a movie title: ")
+# Search for the movie by title and display candidates
+title_candidates = search_by_title(user_movie_input)
+
+if len(title_candidates) == 0:
+    print(f"No movies found with the title '{user_movie_input}'. Please try another title.")
+else:
+    print("\nMatching titles found:")
+    for i in range(min(10, len(title_candidates))): # Display up to 10 candidates
+        print(f"{i}: {title_candidates['title'].iloc[i]}")
+
+    if len(title_candidates) > 1:
+        try:
+            title_index = int(input(f"Enter the index of the movie you want recommendations for (0-{len(title_candidates)-1}): "))
+        except ValueError:
+            print("Invalid input. Using the first matching title.")
+            title_index = 0
+        if title_index < 0 or title_index >= len(title_candidates):
+            print("Invalid index. Using the first matching title.")
+            title_index = 0
+    else:
+        title_index = 0
+# Get and display recommendations
+recommendations = recommendation_results(user_movie_input, title_index)
+
+if recommendations is not None:
+    print("\nRecommendation results based on genre similarity:")
+    # Display top 10 recommendations
+    print(recommendations.head(10))
+
+user_input = "Interstellar"
+print("Here are similar movies based on title search:")
+title_candidates = search_by_title(user_input)
+for i in range(min(5, len(title_candidates))): # Display up to 5 candidates
+    print(i, ": ", title_candidates['title'].iloc[i])
+
+# Get recommendation results for the first title candidate
+title = 0
+print("\nRecommendation results based on genre similarity:")
+recommendations = recommendation_results(user_input, title)
+if recommendations is not None:
+    print(recommendations)
+pip install streamlit scikit-learn pandas numpy
